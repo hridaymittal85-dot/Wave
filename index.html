@@ -649,79 +649,102 @@ function closeModal(){document.getElementById('modal').style.display='none'}
 function showToast(msg){let t=document.getElementById('_toast');if(!t){t=document.createElement('div');t.id='_toast';t.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e1e2a;border:1px solid #333340;border-radius:8px;padding:8px 18px;font-size:12px;font-family:IBM Plex Mono,monospace;color:#e8b86d;z-index:9999;transition:opacity .3s;pointer-events:none';document.body.appendChild(t)}t.textContent=msg;t.style.opacity='1';clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity='0',2200)}
 async function saveMe(){await sset('wave-me-'+me.name,{contacts,rooms:myRooms,msgCount})}
 
-/* ═══════════════════════════════════════════
-   GAMES
-═══════════════════════════════════════════ */
-const WORDS = ['python','rocket','castle','jungle','bridge','butter','purple','silver','garden','planet',
-  'bridge','candle','monkey','temple','bottle','mirror','coffee','pencil','window','carpet',
-  'flower','knight','turtle','oyster','cactus','parrot','donkey','ginger','copper','marble'];
+/* ═══════════════ GAMES ═══════════════ */
+const WORDS=['python','rocket','castle','jungle','bridge','butter','purple','silver','garden','planet',
+  'candle','monkey','temple','bottle','mirror','coffee','pencil','window','carpet','flower',
+  'knight','turtle','oyster','cactus','parrot','donkey','ginger','copper','marble','lizard'];
 
-let tttBoard,tttActive,tttW=0,tttD=0,tttL=0,tttTotalScore=0;
-let memCards,memFlipped,memMatched,memMoves,memTimer,memSecs,memDone;
-let scrWords,scrIdx,scrScore,scrTimer,scrSecs,scrDone;
-let mathQs,mathIdx,mathScore,mathTimer,mathSecs,mathDone;
+let tttBoard=[],tttActive=false,tttW=0,tttD=0,tttL=0,tttTotalScore=0;
+let memCards=[],memFlipped=[],memMatched=0,memMoves=0,memTimer=null,memSecs=0,memDone=false;
+let scrWords=[],scrIdx=0,scrScore=0,scrTimer=null,scrSecs=30,scrDone=false;
+let mathQs=[],mathIdx=0,mathScore=0,mathTimer=null,mathSecs=60,mathDone=false;
 let currentGame=null;
 
-/* ─── Hub / Nav ─── */
+/* ── Navigation ── */
 function playGame(id){
-  document.getElementById('games-hub').style.display='none';
-  document.querySelectorAll('.game-view').forEach(g=>g.classList.remove('show'));
-  document.getElementById('game-'+id).classList.add('show');
-  currentGame=id;
-  if(id==='ttt')tttNew();
-  if(id==='memory')memNew();
-  if(id==='scramble')scrNew();
-  if(id==='math')mathNew();
-}
-function backToHub(){
   stopAllTimers();
-  document.getElementById('games-hub').style.display='';
-  document.querySelectorAll('.game-view').forEach(g=>g.classList.remove('show'));
-  currentGame=null;
-  showLb('ttt',document.querySelector('.lb-tab'));
-}
-function stopAllTimers(){
-  clearInterval(memTimer);clearInterval(scrTimer);clearInterval(mathTimer);
+  currentGame=id;
+  // hide hub, hide all game panes
+  document.getElementById('games-hub-view').style.display='none';
+  document.querySelectorAll('.game-pane').forEach(g=>{g.style.display='none'});
+  // show chosen pane
+  const pane=document.getElementById('game-'+id);
+  pane.style.display='flex';
+  pane.style.flexDirection='column';
+  pane.style.flex='1';
+  // start the game
+  if(id==='ttt')     tttNew();
+  if(id==='memory')  memNew();
+  if(id==='scramble')scrNew();
+  if(id==='math')    mathNew();
 }
 
-/* ─── Leaderboard ─── */
-let lbCache={};
+function backToHub(){
+  stopAllTimers();
+  currentGame=null;
+  document.querySelectorAll('.game-pane').forEach(g=>{g.style.display='none'});
+  document.getElementById('games-hub-view').style.display='flex';
+  document.getElementById('games-hub-view').style.flexDirection='column';
+  document.getElementById('games-hub-view').style.flex='1';
+  showLb('ttt', document.querySelector('#lb-tabs .lb-tab'));
+}
+
+function stopAllTimers(){
+  clearInterval(memTimer); clearInterval(scrTimer); clearInterval(mathTimer);
+  memTimer=null; scrTimer=null; mathTimer=null;
+}
+
+/* ── Leaderboard ── */
 async function showLb(game,tabEl){
-  if(tabEl){document.querySelectorAll('.lb-tab').forEach(t=>t.classList.remove('act'));tabEl.classList.add('act')}
+  if(tabEl){
+    document.querySelectorAll('.lb-tab').forEach(t=>t.classList.remove('act'));
+    tabEl.classList.add('act');
+  }
   const data=await sget('wave-lb-'+game,true)||[];
-  const sorted=data.sort((a,b)=>b.score-a.score).slice(0,10);
+  data.sort((a,b)=>b.score-a.score);
+  const top=data.slice(0,10);
   const body=document.getElementById('lb-body');
-  if(!sorted.length){body.innerHTML='<div class="empty"><div class="empty-icon">🏆</div>no scores yet — play to be first!</div>';return}
-  const medals=['gold','silver','bronze'];
-  body.innerHTML=sorted.map((e,i)=>`
-    <div class="lb-row">
-      <div class="lb-rank ${medals[i]||''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</div>
+  if(!body)return;
+  if(!top.length){
+    body.innerHTML='<div class="empty"><div class="empty-icon">🏆</div>no scores yet<br/>be the first to play!</div>';
+    return;
+  }
+  body.innerHTML=top.map((e,i)=>{
+    const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1);
+    const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'';
+    return `<div class="lb-row">
+      <div class="lb-rank ${cls}">${medal}</div>
       <div class="av" style="width:28px;height:28px;font-size:11px;background:${e.color}33;color:${e.color}">${ini(e.name)}</div>
       <div class="lb-name">${e.name}${e.name===me.name?' (you)':''}</div>
-      <div style="text-align:right"><div class="lb-score">${e.score} pts</div><div class="lb-date">${e.date}</div></div>
-    </div>`).join('');
+      <div style="text-align:right"><div class="lb-score">${e.score} pts</div><div class="lb-date">${e.date||''}</div></div>
+    </div>`;
+  }).join('');
 }
+
 async function submitScore(game,score){
   if(!me.name||score<=0)return;
   const data=await sget('wave-lb-'+game,true)||[];
   const date=new Date().toLocaleDateString();
-  // update personal best
   const idx=data.findIndex(e=>e.name===me.name);
-  if(idx>=0){if(score>data[idx].score){data[idx]={name:me.name,color:me.color,score,date}}}
+  if(idx>=0){if(score>data[idx].score)data[idx]={name:me.name,color:me.color,score,date}}
   else data.push({name:me.name,color:me.color,score,date});
   await sset('wave-lb-'+game,data,true);
 }
 
-/* ─── TTT ─── */
+/* ══ TIC-TAC-TOE ══ */
 function tttNew(){
-  tttBoard=Array(9).fill('');tttActive=true;
+  tttBoard=Array(9).fill('');
+  tttActive=true;
   document.getElementById('ttt-status').textContent='your turn — you are X';
   renderTtt();
 }
 function renderTtt(){
-  const g=document.getElementById('ttt-grid');g.innerHTML='';
+  const g=document.getElementById('ttt-grid');
+  if(!g)return;
+  g.innerHTML='';
   tttBoard.forEach((v,i)=>{
-    const c=document.createElement('div');c.className='ttt-cell'+(v?' '+v.toLowerCase():'');
+    const c=document.createElement('div');
+    c.className='ttt-cell'+(v?' '+v.toLowerCase():'');
     c.textContent=v==='X'?'✕':v==='O'?'◯':'';
     if(!v&&tttActive)c.onclick=()=>tttMove(i);
     g.appendChild(c);
@@ -733,39 +756,42 @@ function renderTtt(){
 }
 function tttMove(i){
   if(!tttActive||tttBoard[i])return;
-  tttBoard[i]='X';renderTtt();
-  const w=tttWinner(tttBoard);
-  if(w==='X'){tttEnd('win');return}
+  tttBoard[i]='X';
+  renderTtt();
+  if(tttCheck('X')){tttEnd('win');return}
   if(tttBoard.every(v=>v)){tttEnd('draw');return}
   tttActive=false;
-  document.getElementById('ttt-status').textContent='AI thinking…';
+  document.getElementById('ttt-status').textContent='AI is thinking…';
   setTimeout(()=>{
-    tttAiMove();renderTtt();
-    const w2=tttWinner(tttBoard);
-    if(w2==='O'){tttEnd('loss');return}
+    tttAI();
+    renderTtt();
+    if(tttCheck('O')){tttEnd('loss');return}
     if(tttBoard.every(v=>v)){tttEnd('draw');return}
     tttActive=true;
     document.getElementById('ttt-status').textContent='your turn — you are X';
-  },400);
+  },450);
 }
-function tttAiMove(){
-  // try to win, then block, then random
+function tttAI(){
   const lines=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-  for(const p of ['O','X']){
-    for(const [a,b,c] of lines){
-      const cells=[tttBoard[a],tttBoard[b],tttBoard[c]];
-      if(cells.filter(v=>v===p).length===2&&cells.includes('')){
-        const idx=[a,b,c][cells.indexOf('')];tttBoard[idx]='O';return;
-      }
-    }
+  // try to win
+  for(const [a,b,c] of lines){
+    if(tttBoard[a]==='O'&&tttBoard[b]==='O'&&!tttBoard[c]){tttBoard[c]='O';return}
+    if(tttBoard[a]==='O'&&tttBoard[c]==='O'&&!tttBoard[b]){tttBoard[b]='O';return}
+    if(tttBoard[b]==='O'&&tttBoard[c]==='O'&&!tttBoard[a]){tttBoard[a]='O';return}
   }
+  // block player
+  for(const [a,b,c] of lines){
+    if(tttBoard[a]==='X'&&tttBoard[b]==='X'&&!tttBoard[c]){tttBoard[c]='O';return}
+    if(tttBoard[a]==='X'&&tttBoard[c]==='X'&&!tttBoard[b]){tttBoard[b]='O';return}
+    if(tttBoard[b]==='X'&&tttBoard[c]==='X'&&!tttBoard[a]){tttBoard[a]='O';return}
+  }
+  // take center or random
   if(!tttBoard[4])tttBoard[4]='O';
-  else{const empty=tttBoard.map((v,i)=>v?-1:i).filter(i=>i>=0);tttBoard[empty[Math.floor(Math.random()*empty.length)]]='O'}
+  else{const e=tttBoard.map((v,i)=>v?null:i).filter(i=>i!==null);tttBoard[e[Math.floor(Math.random()*e.length)]]='O'}
 }
-function tttWinner(b){
-  const lines=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-  for(const [a,c1,c2] of lines)if(b[a]&&b[a]===b[c1]&&b[a]===b[c2])return b[a];
-  return null;
+function tttCheck(p){
+  const L=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  return L.some(([a,b,c])=>tttBoard[a]===p&&tttBoard[b]===p&&tttBoard[c]===p);
 }
 async function tttEnd(result){
   tttActive=false;
@@ -773,172 +799,198 @@ async function tttEnd(result){
   if(result==='win'){tttW++;pts=10;document.getElementById('ttt-status').textContent='🎉 you win! +10 pts'}
   else if(result==='draw'){tttD++;pts=3;document.getElementById('ttt-status').textContent='🤝 draw! +3 pts'}
   else{tttL++;document.getElementById('ttt-status').textContent='😞 AI wins — try again!'}
-  tttTotalScore+=pts;renderTtt();
+  tttTotalScore+=pts;
+  renderTtt();
   if(pts>0)await submitScore('ttt',tttTotalScore);
-  if(currentGame==='ttt')showLb('ttt',null).catch(()=>{});
 }
 
-/* ─── MEMORY ─── */
-const MEM_EMOJIS=['🌟','🎸','🦊','🍕','🚀','🌈','🎯','💎'];
+/* ══ MEMORY MATCH ══ */
+const MEM_EMOJI=['🌟','🎸','🦊','🍕','🚀','🌈','🎯','💎'];
 function memNew(){
-  const pairs=[...MEM_EMOJIS,...MEM_EMOJIS];
-  memCards=pairs.sort(()=>Math.random()-.5).map((e,i)=>({id:i,emoji:e,flipped:false,matched:false}));
-  memFlipped=[];memMatched=0;memMoves=0;memDone=false;
-  clearInterval(memTimer);memSecs=0;
+  clearInterval(memTimer);
+  const pairs=[...MEM_EMOJI,...MEM_EMOJI].sort(()=>Math.random()-.5);
+  memCards=pairs.map((e,i)=>({id:i,emoji:e,flipped:false,matched:false}));
+  memFlipped=[];memMatched=0;memMoves=0;memSecs=0;memDone=false;
   document.getElementById('mem-moves').textContent='0';
   document.getElementById('mem-time').textContent='0s';
   document.getElementById('mem-pairs').textContent='0/8';
   document.getElementById('mem-score-badge').textContent='score: —';
   renderMem();
-  memTimer=setInterval(()=>{if(!memDone){memSecs++;document.getElementById('mem-time').textContent=memSecs+'s'}},1000);
+  memTimer=setInterval(()=>{if(!memDone){memSecs++;const el=document.getElementById('mem-time');if(el)el.textContent=memSecs+'s'}},1000);
 }
 function renderMem(){
-  const g=document.getElementById('mem-grid');g.innerHTML='';
+  const g=document.getElementById('mem-grid');
+  if(!g)return;
+  g.innerHTML='';
   memCards.forEach((card,i)=>{
     const c=document.createElement('div');
-    c.className='mem-card'+(card.matched?' matched':card.flipped?'':' hidden-face');
-    c.textContent=card.flipped||card.matched?card.emoji:'❓';
-    if(!card.matched&&!card.flipped)c.onclick=()=>memFlip(i);
+    if(card.matched){
+      c.className='mem-card matched';
+      c.textContent=card.emoji;
+    } else if(card.flipped){
+      c.className='mem-card flipped';
+      c.textContent=card.emoji;
+    } else {
+      c.className='mem-card';
+      c.textContent='❓';
+      c.onclick=()=>memFlip(i);
+    }
     g.appendChild(c);
   });
 }
 function memFlip(i){
-  if(memFlipped.length>=2||memCards[i].flipped||memCards[i].matched)return;
-  memCards[i].flipped=true;memFlipped.push(i);renderMem();
+  if(memDone||memFlipped.length>=2||memCards[i].flipped||memCards[i].matched)return;
+  memCards[i].flipped=true;
+  memFlipped.push(i);
+  renderMem();
   if(memFlipped.length===2){
-    memMoves++;document.getElementById('mem-moves').textContent=memMoves;
+    memMoves++;
+    const el=document.getElementById('mem-moves');
+    if(el)el.textContent=memMoves;
     const [a,b]=memFlipped;
     if(memCards[a].emoji===memCards[b].emoji){
-      memCards[a].matched=memCards[b].matched=true;memFlipped=[];memMatched++;
-      document.getElementById('mem-pairs').textContent=memMatched+'/8';
+      memCards[a].matched=true;memCards[b].matched=true;
+      memFlipped=[];memMatched++;
+      const pe=document.getElementById('mem-pairs');
+      if(pe)pe.textContent=memMatched+'/8';
+      renderMem();
       if(memMatched===8)memFinish();
-      else renderMem();
     } else {
-      setTimeout(()=>{memCards[a].flipped=memCards[b].flipped=false;memFlipped=[];renderMem()},800);
+      setTimeout(()=>{
+        memCards[a].flipped=false;memCards[b].flipped=false;
+        memFlipped=[];renderMem();
+      },900);
     }
   }
 }
 async function memFinish(){
   memDone=true;clearInterval(memTimer);
-  const score=Math.max(0,Math.round(1000-memMoves*20-memSecs*3));
-  document.getElementById('mem-score-badge').textContent='score: '+score;
+  const score=Math.max(50,1000-memMoves*15-memSecs*2);
+  const sb=document.getElementById('mem-score-badge');
+  if(sb)sb.textContent='score: '+score;
   await submitScore('memory',score);
-  if(currentGame==='memory')showLb('memory',null).catch(()=>{});
 }
 
-/* ─── SCRAMBLE ─── */
-function shuffle(str){const a=str.split('');for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a.join('')}
+/* ══ WORD SCRAMBLE ══ */
+function scramble(w){
+  const a=w.split('');
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}
+  const s=a.join('');return s===w?scramble(w):s;
+}
 function scrNew(){
+  clearInterval(scrTimer);
   const pool=[...WORDS].sort(()=>Math.random()-.5).slice(0,10);
-  scrWords=pool.map(w=>{let s=w;while(s===w)s=shuffle(w);return{word:w,scrambled:s}});
-  scrIdx=0;scrScore=0;scrDone=false;
-  clearInterval(scrTimer);scrSecs=30;
-  document.getElementById('scr-score-badge').textContent='score: 0';
-  document.getElementById('scr-feedback').textContent='';
-  document.getElementById('scr-inp').value='';
-  document.getElementById('scr-inp').className='scramble-inp';
+  scrWords=pool.map(w=>({word:w,sc:scramble(w)}));
+  scrIdx=0;scrScore=0;scrSecs=30;scrDone=false;
+  const sb=document.getElementById('scr-score-badge');if(sb)sb.textContent='score: 0';
+  const fb=document.getElementById('scr-feedback');if(fb)fb.textContent='';
+  const inp=document.getElementById('scr-inp');
+  if(inp){inp.value='';inp.className='scramble-inp';inp.disabled=false;}
   scrShowWord();
   scrTimer=setInterval(()=>{
+    if(scrDone)return;
     scrSecs--;
-    const el=document.getElementById('scr-timer');
-    el.textContent=scrSecs;el.className='scramble-timer'+(scrSecs<=10?' low':'');
+    const te=document.getElementById('scr-timer');
+    if(te){te.textContent=scrSecs;te.className='scramble-timer'+(scrSecs<=10?' low':'');}
     if(scrSecs<=0)scrFinish();
   },1000);
 }
 function scrShowWord(){
-  if(scrIdx>=scrWords.length){scrFinish();return}
-  document.getElementById('scr-word').textContent=scrWords[scrIdx].scrambled.toUpperCase();
-  document.getElementById('scr-progress').textContent='word '+(scrIdx+1)+' of '+scrWords.length;
-  document.getElementById('scr-inp').value='';
-  document.getElementById('scr-inp').className='scramble-inp';
-  document.getElementById('scr-inp').focus();
+  if(scrIdx>=scrWords.length){scrFinish();return;}
+  const we=document.getElementById('scr-word');
+  if(we)we.textContent=scrWords[scrIdx].sc.toUpperCase();
+  const pe=document.getElementById('scr-progress');
+  if(pe)pe.textContent='word '+(scrIdx+1)+' of '+scrWords.length;
+  const inp=document.getElementById('scr-inp');
+  if(inp){inp.value='';inp.className='scramble-inp';setTimeout(()=>inp.focus(),50);}
+  const fb=document.getElementById('scr-feedback');if(fb)fb.textContent='';
 }
 function scrCheck(){
   if(scrDone)return;
-  const val=document.getElementById('scr-inp').value.toLowerCase().trim();
-  const correct=scrWords[scrIdx].word;
-  if(val===correct){
-    const pts=10+Math.floor(scrSecs/3);scrScore+=pts;
-    document.getElementById('scr-score-badge').textContent='score: '+scrScore;
-    document.getElementById('scr-inp').className='scramble-inp correct';
-    document.getElementById('scr-feedback').textContent='✓ +'+pts+' pts';
+  const inp=document.getElementById('scr-inp');
+  if(!inp)return;
+  const val=inp.value.toLowerCase().trim();
+  if(!val)return;
+  if(val===scrWords[scrIdx].word){
+    const pts=10+Math.floor(scrSecs/3);
+    scrScore+=pts;
+    const sb=document.getElementById('scr-score-badge');if(sb)sb.textContent='score: '+scrScore;
+    inp.className='scramble-inp correct';
+    const fb=document.getElementById('scr-feedback');if(fb)fb.textContent='✓ correct! +'+pts+' pts';
     scrIdx++;
-    setTimeout(()=>{document.getElementById('scr-feedback').textContent='';scrShowWord()},600);
+    setTimeout(()=>scrShowWord(),700);
   }
 }
 async function scrFinish(){
+  if(scrDone)return;
   scrDone=true;clearInterval(scrTimer);
-  document.getElementById('scr-timer').textContent='0';
-  document.getElementById('scr-inp').disabled=true;
-  document.getElementById('scr-feedback').textContent='game over! final: '+scrScore+' pts';
+  const te=document.getElementById('scr-timer');if(te)te.textContent='0';
+  const fb=document.getElementById('scr-feedback');if(fb)fb.textContent='done! final score: '+scrScore+' pts';
+  const inp=document.getElementById('scr-inp');if(inp)inp.disabled=true;
   await submitScore('scramble',scrScore);
-  if(currentGame==='scramble')showLb('scramble',null).catch(()=>{});
 }
 
-/* ─── MATH ─── */
-function mathRandQ(){
-  const ops=['+','-','×'];const op=ops[Math.floor(Math.random()*ops.length)];
-  let a,b,ans;
-  if(op==='+'){a=Math.floor(Math.random()*50)+1;b=Math.floor(Math.random()*50)+1;ans=a+b}
-  else if(op==='-'){a=Math.floor(Math.random()*50)+10;b=Math.floor(Math.random()*a)+1;ans=a-b}
-  else{a=Math.floor(Math.random()*12)+1;b=Math.floor(Math.random()*12)+1;ans=a*b}
-  return{q:a+' '+op+' '+b+' = ?',ans};
+/* ══ QUICK MATH ══ */
+function mathQ(){
+  const t=Math.floor(Math.random()*3);
+  let a,b,ans,q;
+  if(t===0){a=Math.floor(Math.random()*50)+1;b=Math.floor(Math.random()*50)+1;ans=a+b;q=a+' + '+b+' = ?'}
+  else if(t===1){a=Math.floor(Math.random()*50)+10;b=Math.floor(Math.random()*40)+1;if(b>a)b=a;ans=a-b;q=a+' - '+b+' = ?'}
+  else{a=Math.floor(Math.random()*12)+1;b=Math.floor(Math.random()*12)+1;ans=a*b;q=a+' × '+b+' = ?'}
+  return{q,ans};
 }
 function mathNew(){
-  mathQs=Array.from({length:15},()=>mathRandQ());
-  mathIdx=0;mathScore=0;mathDone=false;
-  clearInterval(mathTimer);mathSecs=60;
-  document.getElementById('math-score-badge').textContent='score: 0';
-  document.getElementById('math-feedback').textContent='';
-  document.getElementById('math-inp').value='';document.getElementById('math-inp').disabled=false;
-  document.getElementById('math-inp').className='scramble-inp';
+  clearInterval(mathTimer);
+  mathQs=Array.from({length:15},()=>mathQ());
+  mathIdx=0;mathScore=0;mathSecs=60;mathDone=false;
+  const sb=document.getElementById('math-score-badge');if(sb)sb.textContent='score: 0';
+  const fb=document.getElementById('math-feedback');if(fb)fb.textContent='';
+  const inp=document.getElementById('math-inp');
+  if(inp){inp.value='';inp.className='scramble-inp';inp.disabled=false;}
   mathShowQ();
   mathTimer=setInterval(()=>{
+    if(mathDone)return;
     mathSecs--;
-    const el=document.getElementById('math-timer');
-    el.textContent=mathSecs;el.className='scramble-timer'+(mathSecs<=10?' low':'');
+    const te=document.getElementById('math-timer');
+    if(te){te.textContent=mathSecs;te.className='scramble-timer'+(mathSecs<=10?' low':'');}
     if(mathSecs<=0)mathFinish();
   },1000);
 }
 function mathShowQ(){
-  if(mathIdx>=mathQs.length){mathFinish();return}
-  document.getElementById('math-q').textContent=mathQs[mathIdx].q;
-  document.getElementById('math-progress').textContent='question '+(mathIdx+1)+' of '+mathQs.length;
-  document.getElementById('math-inp').value='';
-  document.getElementById('math-inp').className='scramble-inp';
-  document.getElementById('math-inp').focus();
+  if(mathIdx>=mathQs.length){mathFinish();return;}
+  const qe=document.getElementById('math-q');if(qe)qe.textContent=mathQs[mathIdx].q;
+  const pe=document.getElementById('math-progress');if(pe)pe.textContent='question '+(mathIdx+1)+' of '+mathQs.length;
+  const inp=document.getElementById('math-inp');
+  if(inp){inp.value='';inp.className='scramble-inp';setTimeout(()=>inp.focus(),50);}
+  const fb=document.getElementById('math-feedback');if(fb)fb.textContent='';
 }
 function mathCheck(){
   if(mathDone)return;
-  const val=parseInt(document.getElementById('math-inp').value);
-  if(isNaN(val))return;
+  const inp=document.getElementById('math-inp');if(!inp)return;
+  const val=parseInt(inp.value);if(isNaN(val))return;
   if(val===mathQs[mathIdx].ans){
-    const pts=5+Math.floor(mathSecs/10);mathScore+=pts;
-    document.getElementById('math-score-badge').textContent='score: '+mathScore;
-    document.getElementById('math-inp').className='scramble-inp correct';
-    document.getElementById('math-feedback').textContent='✓ +'+pts+' pts';
+    const pts=5+Math.floor(mathSecs/8);
+    mathScore+=pts;
+    const sb=document.getElementById('math-score-badge');if(sb)sb.textContent='score: '+mathScore;
+    inp.className='scramble-inp correct';
+    const fb=document.getElementById('math-feedback');if(fb)fb.textContent='✓ +'+pts+' pts';
     mathIdx++;
-    setTimeout(()=>{document.getElementById('math-feedback').textContent='';mathShowQ()},400);
+    setTimeout(()=>mathShowQ(),400);
   }
 }
 async function mathFinish(){
+  if(mathDone)return;
   mathDone=true;clearInterval(mathTimer);
-  document.getElementById('math-timer').textContent='0';
-  document.getElementById('math-inp').disabled=true;
-  document.getElementById('math-feedback').textContent='done! final: '+mathScore+' pts';
+  const te=document.getElementById('math-timer');if(te)te.textContent='0';
+  const fb=document.getElementById('math-feedback');if(fb)fb.textContent='time up! final: '+mathScore+' pts';
+  const inp=document.getElementById('math-inp');if(inp)inp.disabled=true;
   await submitScore('math',mathScore);
-  if(currentGame==='math')showLb('math',null).catch(()=>{});
 }
 
-// load leaderboard on games panel open
-const _origShowPanel=showPanel;
-// override to also load lb
-window.addEventListener('load',()=>{
-  // wire up showPanel to trigger lb on games
-  const nav=document.getElementById('nav-games');
-  if(nav)nav.addEventListener('click',()=>setTimeout(()=>showLb('ttt',document.querySelector('.lb-tab')),100));
+/* load lb when games tab opened */
+document.getElementById('nav-games').addEventListener('click',()=>{
+  setTimeout(()=>showLb('ttt',document.querySelector('#lb-tabs .lb-tab')),120);
 });
-
 document.getElementById('ln').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('pw').focus()});
 document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')launch()});
 </script>
